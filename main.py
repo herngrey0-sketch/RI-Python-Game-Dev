@@ -144,10 +144,10 @@ while running:
         hit_sound.play()
         pygame.draw.rect(screen, (255, 255, 0), enemy)
         pygame.display.flip()
-        pygame.time.delay(1000)
+        pygame.time.delay(100)
         enemy.inflate_ip(2, 2)
         pygame.display.flip()
-        pygame.time.delay(1000)
+        pygame.time.delay(80)
         enemy.inflate_ip(-2, -2)
 
         # Player "pop" effect
