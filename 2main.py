@@ -1,9 +1,5 @@
-
-
 import os
 import sys
-import random
-
 
 # ── Headless / Codespaces environment fixes ───────────────────────────────────
 # Xvfb virtual display (started by postStartCommand)
