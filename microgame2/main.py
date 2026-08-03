@@ -120,6 +120,8 @@ while running:
     for c in collectibles[:]:
         if player.colliderect(c):
             c.inflate_ip(5, 5)
+            pygame.display.flip()
+            pygame.time.delay(40)
             collectibles.remove(c)
             score += 1
             screen.fill(GREEN)
@@ -152,6 +154,7 @@ while running:
             pygame.Rect(300, 100, 20, 20),
             pygame.Rect(500, 300, 20, 20)
         ]
+        hazards.append(pygame.Rect(600, 250, 30, 30))
         game_over = False
     
 
