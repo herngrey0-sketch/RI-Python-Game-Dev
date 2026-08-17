@@ -1,3 +1,5 @@
+# new additions = timer, high_score, charging_up_bar, circle around player, increase in level
+
 import os
 import sys
 
@@ -17,7 +19,7 @@ os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 import pygame
 import random
-
+from feedback import screen_shake
 
 # ─────────────────────────────────────────
 #  INITIALISE pygame
@@ -30,7 +32,7 @@ pygame.init()
 # ─────────────────────────────────────────
 SCREEN_WIDTH  = 640
 SCREEN_HEIGHT = 480
-TITLE         = "Pygame"
+TITLE         = "Impact Dash"
 
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -61,13 +63,51 @@ ORANGE = (255, 100, 0)
 #  GAME OBJECTS
 # ─────────────────────────────────────────
 player = pygame.Rect(100, 100, 40, 40)
-PLAYER_SPEED = 5
+PLAYER_SPEED = 6
+DASH_READY_GLOW = 0.0
 
 
-targets = [
-    pygame.Rect(200, 150, 30, 30),
-    pygame.Rect(450, 300, 30, 30)
-]
+HIGH_SCORE_FILE = os.path.join(os.path.dirname(__file__), "high_score.txt")
+
+
+def load_high_score():
+    try:
+        with open(HIGH_SCORE_FILE, "r", encoding="utf-8") as file:
+            return int(file.read().strip())
+    except (FileNotFoundError, ValueError):
+        return 0
+
+
+def save_high_score(value):
+    with open(HIGH_SCORE_FILE, "w", encoding="utf-8") as file:
+        file.write(str(value))
+
+
+def spawn_target():
+    target_w = 30
+    target_h = 30
+    padding = 30
+    max_attempts = 200
+
+    for _ in range(max_attempts):
+        x = random.randint(padding, SCREEN_WIDTH - target_w - padding)
+        y = random.randint(padding, SCREEN_HEIGHT - target_h - padding)
+        rect = pygame.Rect(x, y, target_w, target_h)
+
+        if not rect.colliderect(player):
+            if all(not rect.colliderect(existing) for existing in targets):
+                return rect
+
+    return pygame.Rect(
+        random.randint(padding, SCREEN_WIDTH - target_w - padding),
+        random.randint(padding, SCREEN_HEIGHT - target_h - padding),
+        target_w,
+        target_h,
+    )
+
+
+targets = []
+DIFFICULTY_SCALE = 0.0
 
 
 particles = []
@@ -78,8 +118,18 @@ particles = []
 # ─────────────────────────────────────────
 shake_offsets = []
 
+score = 0
+TIME_LIMIT = 30
+time_left = TIME_LIMIT
+high_score = load_high_score()
 
 state = "menu"
+
+
+game_over_message = ""
+game_over_color = YELLOW
+game_over_timer = 0
+game_over_done = False
 
 
 font       = pygame.font.Font(None, 36)
@@ -166,20 +216,25 @@ def draw_popups(surface):
         surface.blit(tmp, (draw_x, draw_y))
 
 
-def draw_player(surface, rect, charging, charge_t):
+def draw_player(surface, rect, charging, charge_t, dash_ready_glow):
+    cx, cy = rect.centerx, rect.centery
+    if dash_timer == 0 and dash_active == 0:
+        glow_radius = 50 + int(10 * dash_ready_glow)
+        glow_color = (100 + int(155 * dash_ready_glow), 100 + int(155 * dash_ready_glow), 0)
+        pygame.draw.circle(surface, glow_color, (cx, cy), glow_radius, 2)
     if not charging:
         pygame.draw.rect(surface, WHITE, rect)
+        pygame.draw.rect(surface, (100, 200, 255) if dash_timer == 0 and dash_active == 0 else GRAY, rect, 2)
         return
-
-
     t = min(charge_t / MAX_CHARGE, 1.0)
     w = int(rect.width  * lerp(1.0, 0.70, t))
     h = int(rect.height * lerp(1.0, 1.20, t))
-
-
-    cx, cy   = rect.centerx, rect.centery
     squished = pygame.Rect(cx - w // 2, cy - h // 2, w, h)
-    pygame.draw.rect(surface, WHITE, squished)
+    pygame.draw.rect(surface, (255, 200, 0), squished)
+    charge_bar_y = cy + 35
+    bar_width = int(40 * t)
+    pygame.draw.rect(surface, (100, 100, 100), (cx - 20, charge_bar_y, 40, 6))
+    pygame.draw.rect(surface, YELLOW, (cx - 20, charge_bar_y, bar_width, 6))
 
 
 def start_transition(target_state):
@@ -187,6 +242,24 @@ def start_transition(target_state):
     global fade_dir, pending_state
     fade_dir      = +1
     pending_state = target_state
+
+
+def reset_game_state():
+    global score, time_left, targets, player, game_over_message, game_over_color, game_over_timer, game_over_done, DIFFICULTY_SCALE, DASH_READY_GLOW
+
+    score = 0
+    time_left = TIME_LIMIT
+    player.x = SCREEN_WIDTH // 2
+    player.y = SCREEN_HEIGHT // 2
+    targets.clear()
+    DIFFICULTY_SCALE = 0.0
+    DASH_READY_GLOW = 0.0
+    game_over_message = ""
+    game_over_color = YELLOW
+    game_over_timer = 0
+    game_over_done = False
+    for _ in range(3):
+        targets.append(spawn_target())
 
 
 # ─────────────────────────────────────────
@@ -231,6 +304,8 @@ while running:
         fade_alpha    = 255
         fade_dir      = -1
         state         = pending_state
+        if state == "gameplay":
+            reset_game_state()
         pending_state = None
     elif fade_dir == -1 and fade_alpha <= 0:
         # Fully visible again: stop animating
@@ -245,7 +320,33 @@ while running:
 
     # ── UPDATE: GAMEPLAY ─────────────────
     elif state == "gameplay":
+        DIFFICULTY_SCALE = min(score * 0.15, 3.0)
+        if dash_timer == 0 and dash_active == 0:
+            DASH_READY_GLOW = (DASH_READY_GLOW + 0.08) % 1.0
+        else:
+            DASH_READY_GLOW = 0.0
 
+        if not game_over_done:
+            if time_left > 0:
+                time_left = max(0.0, time_left - 1 / FPS)
+
+            if time_left <= 0:
+                if score > high_score:
+                    high_score = score
+                    save_high_score(high_score)
+                    game_over_message = "A New High Score!"
+                    game_over_color = YELLOW
+                else:
+                    game_over_message = "You Didn't Beat Your High Score :("
+                    game_over_color = RED
+                game_over_timer = 120
+                game_over_done = True
+                spawn_particles(player.centerx, player.centery, color=YELLOW, amount=50)
+
+        else:
+            game_over_timer -= 1
+            if game_over_timer <= 0 and fade_dir == 0:
+                start_transition("menu")
 
         keys = pygame.key.get_pressed()
 
@@ -289,11 +390,22 @@ while running:
                 particles.remove(p)
 
 
+        # Spawn more targets as difficulty increases
+        target_count = 3 + int(DIFFICULTY_SCALE)
+        while len(targets) < target_count and random.random() < 0.08 + DIFFICULTY_SCALE * 0.02:
+            targets.append(spawn_target())
+
         for t in targets[:]:
-            if player.colliderect(t) and dash_active > 0:
-                spawn_particles(t.centerx, t.centery, color=ORANGE, amount=40)
+            if time_left > 0 and player.colliderect(t) and dash_active > 0:
+                spawn_particles(t.centerx, t.centery, color=ORANGE, amount=50)
                 shake_offsets = screen_shake()
                 targets.remove(t)
+                score += 1
+                if score > high_score:
+                    high_score = score
+                    save_high_score(high_score)
+                if len(targets) < target_count:
+                    targets.append(spawn_target())
                 score_popups.append({
                     "value":    "+1",
                     "x":        float(t.centerx),
@@ -324,6 +436,10 @@ while running:
             start_x    = (SCREEN_WIDTH - start_surf.get_width()) // 2
             screen.blit(start_surf, (start_x, 240))
 
+        high_score_surf = font.render(f"High Score: {high_score}", True, YELLOW)
+        high_score_x = (SCREEN_WIDTH - high_score_surf.get_width()) // 2
+        screen.blit(high_score_surf, (high_score_x, 290))
+
 
     # ── RENDER: GAMEPLAY ─────────────────────────────────────────────────────
     elif state == "gameplay":
@@ -344,8 +460,25 @@ while running:
                                (int(p["pos"][0]), int(p["pos"][1])), 3)
 
 
-        draw_player(game_surface, player, charging, charge_time)
+        score_text = font.render(f"Score: {score}", True, WHITE)
+        timer_text = font.render(f"Time: {max(0, int(time_left))}", True, WHITE)
+        difficulty_text = font.render(f"Lvl: {min(6, int(DIFFICULTY_SCALE) + 1)}", True, (100, 200, 255))
+        game_surface.blit(score_text, (20, 20))
+        game_surface.blit(timer_text, (SCREEN_WIDTH - timer_text.get_width() - 20, 20))
+        game_surface.blit(difficulty_text, (SCREEN_WIDTH // 2 - difficulty_text.get_width() // 2, 20))
 
+        draw_player(game_surface, player, charging, charge_time, DASH_READY_GLOW)
+
+
+        if game_over_done:
+            message_alpha = int(255 * (1 - abs(game_over_timer - 60) / 60))
+            message_surf = title_font.render(game_over_message, True, game_over_color)
+            message_tmp = pygame.Surface(message_surf.get_size(), pygame.SRCALPHA)
+            message_tmp.blit(message_surf, (0, 0))
+            message_tmp.set_alpha(message_alpha)
+            message_x = (SCREEN_WIDTH - message_surf.get_width()) // 2
+            message_y = SCREEN_HEIGHT // 2 - 40
+            screen.blit(message_tmp, (message_x, message_y))
 
         for t in targets:
             pygame.draw.rect(game_surface, AMBER, t)
