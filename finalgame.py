@@ -24,7 +24,7 @@ pygame.init()
 # Screen / window setup
 SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
-TITLE = "Reckless Driving Simulator"
+TITLE = "Dodging Reckless Drivers Simulator"
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption(TITLE)
 
@@ -257,7 +257,7 @@ while running:
 	draw_grid(screen)
 
 	if state == "menu":
-		draw_centered_text(screen, "RECKLESS DRIVING SIMULATOR", title_font, WHITE, 125)
+		draw_centered_text(screen, "DODGING RECKLESS DRIVERS SIMULATOR", title_font, WHITE, 125)
 		draw_centered_text(screen, "Blue: Player", small_font, BLUE, 205)
 		draw_centered_text(screen, "Orange: Normal Car (drives normally)", small_font, ORANGE, 231)
 		draw_centered_text(screen, "Red: Reckless Car (randomly move around)", small_font, RED, 257)
