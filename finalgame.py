@@ -17,7 +17,7 @@ import pygame
 import random
 
 
-# Initialize pygame
+# Initialise pygame
 pygame.init()
 
 
